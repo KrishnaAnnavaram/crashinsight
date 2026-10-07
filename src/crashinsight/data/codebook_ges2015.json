@@ -1,0 +1,155 @@
+{
+  "version": "ges2015-v1",
+  "source": "NHTSA, 1988-2015 NASS GES Analytical User Manual (DOT HS 812 320). Transcribed for the variables that crashinsight uses. Check each entry against the manual before you publish a result.",
+  "variables": {
+    "REGION": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Census region of the crash",
+      "codes": {"1": "Northeast", "2": "Midwest", "3": "South", "4": "West"},
+      "unknown": [], "not_applicable": []
+    },
+    "MAX_VSEV": {
+      "file": "VEHICLE", "kind": "ordinal", "label": "Maximum injury severity in the vehicle",
+      "codes": {
+        "0": "O - No apparent injury", "1": "C - Possible injury", "2": "B - Suspected minor injury",
+        "3": "A - Suspected serious injury", "4": "K - Fatal injury", "5": "Injured, severity unknown",
+        "6": "Died prior to crash", "8": "No occupants", "9": "Unknown"
+      },
+      "unknown": [5, 9], "not_applicable": [6, 8]
+    },
+    "BODY_TYP": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Vehicle body type (manual group level)",
+      "ranges": [
+        [1, 13, "Passenger car"], [14, 19, "Utility vehicle"], [20, 29, "Van"],
+        [30, 39, "Pickup truck"], [40, 49, "Other light truck"], [50, 59, "Bus"],
+        [60, 79, "Medium or heavy truck"], [80, 89, "Motorcycle"], [90, 97, "Other vehicle"],
+        [98, 99, "Unknown"]
+      ],
+      "unknown": [98, 99], "not_applicable": []
+    },
+    "MAN_COLL": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Manner of collision",
+      "codes": {
+        "0": "Not a collision with a vehicle in transport", "1": "Front-to-rear", "2": "Front-to-front",
+        "6": "Angle", "7": "Sideswipe, same direction", "8": "Sideswipe, opposite direction",
+        "9": "Rear-to-side", "10": "Rear-to-rear", "11": "Other", "98": "Not reported", "99": "Unknown"
+      },
+      "unknown": [98, 99], "not_applicable": []
+    },
+    "HIT_RUN": {
+      "file": "VEHICLE", "kind": "binary", "label": "Hit-and-run",
+      "codes": {"0": "No", "1": "Yes", "9": "Unknown"}, "positive": [1],
+      "unknown": [9], "not_applicable": []
+    },
+    "ROLLOVER": {
+      "file": "VEHICLE", "kind": "binary", "label": "Rollover",
+      "codes": {"0": "No rollover", "1": "Tripped rollover", "2": "Untripped rollover", "9": "Rollover, type unknown"},
+      "positive": [1, 2, 9], "unknown": [], "not_applicable": []
+    },
+    "VEH_ALCH": {
+      "file": "VEHICLE", "kind": "binary", "label": "Police-reported alcohol involvement for the vehicle",
+      "codes": {"1": "Alcohol involved", "2": "No alcohol involved", "8": "Not reported", "9": "Unknown"},
+      "positive": [1], "unknown": [8, 9], "not_applicable": []
+    },
+    "SPEEDREL": {
+      "file": "VEHICLE", "kind": "binary", "label": "Speed related",
+      "codes": {
+        "0": "No", "2": "Yes, racing", "3": "Yes, exceeded speed limit", "4": "Yes, too fast for conditions",
+        "5": "Yes, specifics unknown", "8": "No driver present or unknown if driver present", "9": "Unknown"
+      },
+      "positive": [2, 3, 4, 5], "unknown": [9], "not_applicable": [8]
+    },
+    "VSURCOND": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Roadway surface condition",
+      "codes": {
+        "0": "Non-trafficway or driveway access", "1": "Dry", "2": "Wet", "3": "Snow", "4": "Ice or frost",
+        "5": "Sand", "6": "Water (standing or moving)", "7": "Oil", "8": "Other", "10": "Slush",
+        "11": "Mud, dirt or gravel", "98": "Not reported", "99": "Unknown"
+      },
+      "unknown": [98, 99], "not_applicable": [0]
+    },
+    "VTRAFWAY": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Trafficway description",
+      "codes": {
+        "0": "Non-trafficway or driveway access", "1": "Two-way, not divided", "2": "Two-way, divided, unprotected median",
+        "3": "Two-way, divided, positive median barrier", "4": "One-way trafficway",
+        "5": "Two-way, not divided, with a continuous left-turn lane", "6": "Entrance or exit ramp",
+        "8": "Not reported", "9": "Unknown"
+      },
+      "unknown": [8, 9], "not_applicable": [0]
+    },
+    "VALIGN": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Roadway alignment",
+      "codes": {
+        "0": "Non-trafficway or driveway access", "1": "Straight", "2": "Curve, right", "3": "Curve, left",
+        "4": "Curve, unknown direction", "8": "Not reported", "9": "Unknown"
+      },
+      "unknown": [8, 9], "not_applicable": [0]
+    },
+    "VPROFILE": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Roadway grade",
+      "codes": {
+        "0": "Non-trafficway or driveway access", "1": "Level", "2": "Grade, unknown slope", "3": "Hillcrest",
+        "4": "Sag", "5": "Uphill", "6": "Downhill", "8": "Not reported", "9": "Unknown"
+      },
+      "unknown": [8, 9], "not_applicable": [0]
+    },
+    "FIRE_EXP": {
+      "file": "VEHICLE", "kind": "binary", "label": "Fire occurrence",
+      "codes": {"0": "No", "1": "Yes"}, "positive": [1], "unknown": [], "not_applicable": []
+    },
+    "GVWR": {
+      "file": "VEHICLE", "kind": "nominal", "label": "Gross vehicle weight rating class",
+      "codes": {
+        "0": "Not applicable", "1": "10,000 lbs or less", "2": "10,001 to 26,000 lbs", "3": "More than 26,000 lbs",
+        "8": "Not reported", "9": "Unknown"
+      },
+      "unknown": [8, 9], "not_applicable": [0]
+    },
+    "TRAV_SP": {
+      "file": "VEHICLE", "kind": "numeric", "label": "Travel speed (mph)",
+      "valid": [0, 151], "topcode": {"997": 152}, "unknown": [998, 999], "not_applicable": []
+    },
+    "VSPD_LIM": {
+      "file": "VEHICLE", "kind": "numeric", "label": "Posted speed limit (mph)",
+      "valid": [5, 95], "unknown": [98, 99], "not_applicable": [0]
+    },
+    "MOD_YEAR": {
+      "file": "VEHICLE", "kind": "numeric", "label": "Vehicle model year",
+      "valid": [1900, 2016], "unknown": [9998, 9999], "not_applicable": []
+    },
+    "NUMOCCS": {
+      "file": "VEHICLE", "kind": "numeric", "label": "Number of occupants",
+      "valid": [0, 96], "unknown": [97, 98, 99], "not_applicable": []
+    },
+    "HOUR": {
+      "file": "VEHICLE", "kind": "numeric", "label": "Hour of the crash",
+      "valid": [0, 23], "unknown": [99], "not_applicable": []
+    },
+    "LGT_COND": {
+      "file": "ACCIDENT", "kind": "nominal", "label": "Light condition",
+      "codes": {
+        "1": "Daylight", "2": "Dark, not lighted", "3": "Dark, lighted", "4": "Dawn", "5": "Dusk",
+        "6": "Dark, unknown lighting", "7": "Other", "8": "Not reported", "9": "Unknown"
+      },
+      "unknown": [8, 9], "not_applicable": []
+    },
+    "WEATHER": {
+      "file": "ACCIDENT", "kind": "nominal", "label": "Atmospheric condition",
+      "codes": {
+        "1": "Clear", "2": "Rain", "3": "Sleet or hail", "4": "Snow", "5": "Fog, smog or smoke",
+        "6": "Severe crosswinds", "7": "Blowing sand, soil or dirt", "8": "Other", "10": "Cloudy",
+        "11": "Blowing snow", "12": "Freezing rain or drizzle", "98": "Not reported", "99": "Unknown"
+      },
+      "unknown": [98, 99], "not_applicable": []
+    },
+    "AGE": {
+      "file": "PERSON", "kind": "numeric", "label": "Driver age (years)",
+      "valid": [0, 120], "unknown": [998, 999], "not_applicable": []
+    },
+    "SEX": {
+      "file": "PERSON", "kind": "nominal", "label": "Driver sex",
+      "codes": {"1": "Male", "2": "Female", "8": "Not reported", "9": "Unknown"},
+      "unknown": [8, 9], "not_applicable": []
+    }
+  }
+}

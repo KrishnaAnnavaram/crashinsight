@@ -1,0 +1,32 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+
+# local data (never commit NHTSA files or generated tables)
+/data/*
+!/data/README.md
+*.db
+*.sqlite
+*.parquet
+
+# models, reports and run artefacts
+/models/
+/artifacts/
+/reports/
+/outputs/
+*.joblib
+*.pkl
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
