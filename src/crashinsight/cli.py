@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -176,8 +175,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # joblib prints a warning when it cannot count physical cores on some Windows hosts.
-    os.environ.setdefault("LOKY_MAX_CPU_COUNT", str(os.cpu_count() or 1))
     args = build_parser().parse_args(argv)
     settings = Settings.from_env()
     try:
