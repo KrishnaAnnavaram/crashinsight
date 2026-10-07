@@ -114,7 +114,7 @@ crashinsight gives each of these questions its own component. Each component has
 | Models | `majority` baseline, `logreg`, `forest`, `boosting`, `ordinal` |
 | Offline mode | The synthetic generator writes GES-like files. All commands and all tests run with no download and no network |
 | Safety | No outlier filter. No sentinel code as a number. No crash on both sides of a split |
-| Tests | **53** unit tests (`pytest`), 1 more skips without the optional `shap` package |
+| Tests | **53** pass in CI (`.[dev]` only). 1 more test skips without the optional `shap` package |
 
 ```mermaid
 flowchart LR
@@ -607,12 +607,11 @@ All numbers below come from this repository. The model and age numbers use **syn
 
 | Validation | Result | Command |
 |---|---|---|
-| Unit tests (local, Python 3.13) | **53 passed, 1 skipped** (SHAP) | `pytest -q` |
-| Unit tests (clean venv with `.[dev]` only, as in CI) | **53 passed, 1 skipped** | `pip install -e ".[dev]" && pytest -q` |
+| Unit tests | CI installs only `.[dev]`: **53 passed**, 1 skipped (`explain` extra, SHAP) | `pip install -e ".[dev]" && pytest -q` |
 | Codebook coverage on synthetic files | 0 codes with no label | `crashinsight validate` |
 | Rows kept (synthetic) | 5,105 of 5,422 vehicle rows. 213 unknown and 104 not applicable severity removed | `crashinsight demo` |
 | Weighted KA rate, newer vs. older (synthetic) | 0.0707 (SE 0.0051) vs. 0.1220 (SE 0.0071) | `crashinsight age-effect` |
-| Adjusted odds ratio, newer vs. older (synthetic) | 0.546, 95% PSU bootstrap CI 0.485–0.641 (30 draws) | `crashinsight age-effect` |
+| Adjusted odds ratio, newer vs. older (synthetic) | 0.546, 95% PSU bootstrap CI 0.485–0.641 (30 draws, the `demo` default) | `crashinsight demo` |
 
 Hold-out test on synthetic data, target `ka` (KA prevalence 0.099):
 
