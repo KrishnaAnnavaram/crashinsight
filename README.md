@@ -74,6 +74,7 @@ This README is the **one location that explains all of crashinsight**. It gives 
 4. 🔄 [The end-to-end workflow](#4-the-end-to-end-workflow)
    - 4.1 [Full flow](#41-full-flow)
    - 4.2 [The life cycle of one vehicle row](#42-the-life-cycle-of-one-vehicle-row)
+   - 4.3 [Who does which step](#43-who-does-which-step)
 5. 🔵 [The codebook and the decoder](#5-the-codebook-and-the-decoder)
 6. 🟢 [The analysis table](#6-the-analysis-table)
 7. 🟣 [Survey-weighted rates](#7-survey-weighted-rates)
@@ -148,6 +149,55 @@ flowchart LR
 | Synthetic data | `src/crashinsight/synthetic.py` | GES-like VEHICLE, ACCIDENT and PERSON files with a known signal |
 | CLI | `src/crashinsight/cli.py` | `synth`, `validate`, `describe`, `age-effect`, `train`, `evaluate`, `report`, `demo` |
 
+The component map shows which module calls which module. An arrow points from the caller to the module that it uses.
+
+```mermaid
+flowchart TB
+    CLI["cli.py<br/>8 commands"]
+    CFG["config.py<br/>Settings.from_env"]
+    subgraph DATA["Data in"]
+        SYN["synthetic.py<br/>generate, write"]
+        SCH["schema.py<br/>load_tables, validate_*"]
+        CB["codebook.py<br/>load_codebook, Variable.decode"]
+        DS["dataset.py<br/>build_dataset, target_values"]
+    end
+    subgraph STATS["Survey statistics"]
+        SV["survey.py<br/>domain_mean, weighted_rate_table"]
+        AN["analysis.py<br/>age_effect"]
+    end
+    subgraph ML["Models"]
+        TR["train.py<br/>train, cross_validate, save, load"]
+        SP["split.py<br/>grouped_folds, grouped_holdout"]
+        MD["models.py<br/>build_pipeline, OrdinalClassifier"]
+        EV["evaluate.py<br/>classification_metrics, bootstrap"]
+        EX["explain.py<br/>permutation_table"]
+    end
+    RP["report.py<br/>describe_tables, render"]
+
+    CLI --> CFG
+    CLI --> SYN
+    CLI --> SCH
+    CLI --> CB
+    CLI --> DS
+    CLI --> AN
+    CLI --> TR
+    CLI --> SP
+    CLI --> EV
+    CLI --> EX
+    CLI --> RP
+    DS --> CB
+    DS --> SCH
+    AN --> SV
+    RP --> SV
+    RP --> AN
+    TR --> SP
+    TR --> MD
+    TR --> EV
+    TR --> DS
+    MD --> DS
+    EX --> EV
+```
+
 ### 2.2 System context
 
 ```mermaid
@@ -218,6 +268,17 @@ The imputers, the scaler and the encoder are steps of one scikit-learn `Pipeline
 
 `split.py` uses `StratifiedGroupKFold` with `CASENUM` as the group. `assert_disjoint_groups` stops the run if one crash is on both sides of a split.
 
+```mermaid
+flowchart LR
+    ROWS[/"Vehicle rows with CASENUM"/] --> SGK["StratifiedGroupKFold<br/>groups = CASENUM, shuffle with seed"]
+    SGK --> TRN["Training crashes"]
+    SGK --> TST["Test crashes"]
+    TRN --> CHK{"assert_disjoint_groups:<br/>one crash on both sides?"}
+    TST --> CHK
+    CHK -- "yes" --> STOP[/"AssertionError, the run stops"/]
+    CHK -- "no" --> FIT["Fit the pipeline on training crashes,<br/>score the test crashes"]
+```
+
 ### 3.7 National rates use the survey design
 
 `survey.py` uses `WEIGHT` for each rate. The standard error uses the variance strata (`PSUSTRAT`) and the PSUs. The tables also show the unweighted rate, so the reader can see the effect of the weight.
@@ -233,11 +294,18 @@ The imputers, the scaler and the encoder are steps of one scikit-learn `Pipeline
 ### 4.1 Full flow
 
 ```mermaid
-flowchart TB
-    V["VEHICLE.CSV"] --> S["schema.validate_vehicle"]
-    A["ACCIDENT.CSV (optional)"] --> SA["schema.validate_accident"]
-    P["PERSON.CSV (optional)"] --> SP["schema.validate_person"]
-    S & SA & SP --> J["dataset.join_context"]
+flowchart TD
+    V[/"VEHICLE.CSV"/] --> S["schema.validate_vehicle"]
+    A[/"ACCIDENT.CSV (optional)"/] --> SA["schema.validate_accident"]
+    P[/"PERSON.CSV (optional)"/] --> SP["schema.validate_person"]
+    S --> OK{"Schema valid?"}
+    SA --> OK
+    SP --> OK
+    OK -- "no" --> ERR[/"SchemaError, exit code 1"/]
+    OK -- "yes" --> J["dataset.join_context"]
+    CB[("codebook_ges2015.json")] --> DEC
+    CB --> VAL["crashinsight validate:<br/>codes with no label, sentinel shares"]
+    VAL --> HV{{"HUMAN<br/>fix the codebook if a code has no label"}}
     J --> DEC["codebook decode: labels, NaN, categories"]
     DEC --> T["targets: KABCO and KA"]
     T --> TAB["analysis table + feature spec"]
@@ -247,11 +315,49 @@ flowchart TB
     H --> CV["train.cross_validate (grouped folds)"]
     H --> FIT["final pipeline fit"]
     FIT --> EV["evaluate on hold-out crashes"]
-    EV --> MC["model card + metrics.json"]
-    W & AGE & EV --> R["report.md"]
+    CV --> MC
+    EV --> MC[("outputs/model_target/<br/>model.joblib, metrics.json, model_card.md")]
+    W --> R
+    AGE --> R
+    EV --> R[/"report.md"/]
+    R --> HR{{"HUMAN<br/>analyst reviews each result<br/>before publication"}}
+
+    classDef human fill:#fff3cd,stroke:#b8901f,color:#3d2f00,font-weight:bold
+    class HV,HR human
 ```
 
 ### 4.2 The life cycle of one vehicle row
+
+```mermaid
+stateDiagram-v2
+    state "Raw row in VEHICLE.CSV" as Raw
+    state "Validated row" as Valid
+    state "Row with crash and driver context" as Joined
+    state "Decoded row" as Decoded
+    state "Row in the analysis table" as InTable
+    state "Removed, severity unknown" as DropUnknown
+    state "Removed, severity not applicable" as DropNA
+    state "Training crash" as Train
+    state "Hold-out crash" as Test
+    state "Scored row" as Scored
+    [*] --> Raw
+    Raw --> SchemaError: column absent, code not integer, WEIGHT not positive, key not unique
+    Raw --> Valid: load_tables, validate_vehicle
+    Valid --> Joined: join_context
+    Joined --> Decoded: codebook decode
+    Decoded --> DropUnknown: MAX_VSEV 5 or 9
+    Decoded --> DropNA: MAX_VSEV 6 or 8
+    Decoded --> InTable: MAX_VSEV 0 to 4
+    InTable --> InTable: weighted rate, age analysis
+    InTable --> Train: grouped_holdout, with its crash
+    InTable --> Test: grouped_holdout, with its crash
+    Train --> Scored: out-of-fold probability
+    Test --> Scored: hold-out probability
+    Scored --> [*]
+    DropUnknown --> [*]
+    DropNA --> [*]
+    SchemaError --> [*]
+```
 
 1. `load_tables` reads the row from `VEHICLE.CSV` with Latin-1 encoding.
 2. `validate_vehicle` checks the columns, the integer codes, the weight and the key.
@@ -263,11 +369,63 @@ flowchart TB
 8. The pipeline imputes, encodes and scales the row, then the estimator gives the class probabilities.
 9. The metrics compare the KA probability of the row with its true KA value.
 
+### 4.3 Who does which step
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor AN as Analyst
+    participant CLI as crashinsight CLI
+    participant SCH as schema.py
+    participant DS as dataset.py and codebook.py
+    participant SV as survey.py and analysis.py
+    participant TR as train.py
+    participant FS as outputs/ folder
+
+    AN->>CLI: crashinsight report --data data/ges2015
+    CLI->>CLI: Settings.from_env
+    CLI->>SCH: load_tables(data)
+    SCH-->>CLI: vehicle, accident, person tables, or SchemaError
+    CLI->>DS: load_codebook, build_dataset(..., crash_year)
+    DS-->>CLI: BuildResult: frame, spec, dropped counts
+    CLI->>SV: age_effect(frame, bootstrap, seed)
+    SV-->>CLI: AgeEffect: rates, odds ratio, CI
+    loop logreg, then boosting
+        CLI->>TR: train(frame, spec, target ka, n_boot 0)
+        TR-->>CLI: TrainResult: CV, test, baseline
+    end
+    CLI->>CLI: best model by test KA PR-AUC
+    CLI->>CLI: grouped_holdout, permutation_table on the test crashes
+    CLI->>SV: render calls describe_tables, weighted_rate_table
+    CLI->>FS: write report.md
+    CLI-->>AN: wrote report path
+    AN->>AN: review each table before publication
+```
+
 ---
 
 ## 5. The codebook and the decoder
 
 **Purpose.** Change each GES code into a label, a number or a missing value, with rules from one file.
+
+```mermaid
+flowchart TD
+    J[/"codebook_ges2015.json<br/>or a file that you give"/] --> P["load_codebook, then _parse each entry"]
+    P --> PC{"Entry valid?<br/>kind, codes or ranges,<br/>valid range, positive codes"}
+    PC -- "no" --> E[/"ValueError"/]
+    PC -- "yes" --> V["Variable"]
+    RAW[/"Raw codes of one column"/] --> D["Variable.decode"]
+    V --> D
+    D --> K{"kind"}
+    K -- "numeric" --> N["topcode to its cap,<br/>sentinel or outside valid to NaN"]
+    K -- "binary" --> B["positive code to 1,<br/>other labelled code to 0,<br/>sentinel or no label to NaN"]
+    K -- "nominal or ordinal" --> L["unknown to Unknown,<br/>not applicable to Not applicable,<br/>label from codes or ranges, else NaN"]
+    N --> OUT[/"Decoded column"/]
+    B --> OUT
+    L --> OUT
+    V --> UC["undecoded_codes, sentinel_share"]
+    UC --> VR[/"validate output"/]
+```
 
 | Input | Output |
 |---|---|
@@ -301,6 +459,23 @@ flowchart TB
 ## 6. The analysis table
 
 **Purpose.** Make one row for each vehicle with a known severity, with decoded features, targets and design columns.
+
+```mermaid
+flowchart TD
+    V[/"Validated VEHICLE"/] --> J["join_context"]
+    A[/"ACCIDENT, optional"/] -- "LGT_COND, WEATHER on CASENUM" --> J
+    P[/"PERSON, optional"/] -- "driver PER_TYP 1, AGE, SEX<br/>on CASENUM and VEH_NO" --> J
+    J --> DES["Copy CASENUM, VEH_NO, PSU,<br/>PSUSTRAT, WEIGHT"]
+    DES --> SRC{"Source column<br/>in the files?"}
+    SRC -- "no" --> SKIP["Feature not in FeatureSpec"]
+    SRC -- "yes" --> DEC["codebook decode:<br/>numeric, binary, nominal"]
+    DEC --> AGE["vehicle_age = crash year - model year,<br/>minimum 0"]
+    AGE --> TOD["time_of_day: HOUR in 5 bands"]
+    TOD --> SEV["kabco_from_max_vsev, ka"]
+    SEV --> KN{"Severity known?"}
+    KN -- "no" --> DROP["Remove the row,<br/>count unknown or not applicable"]
+    KN -- "yes" --> OUT[/"BuildResult: frame, FeatureSpec,<br/>dropped counts"/]
+```
 
 | Input | Output |
 |---|---|
@@ -340,6 +515,23 @@ flowchart TB
 
 **Purpose.** Give a national estimate of the KA rate for each level of a grouping variable, with a standard error.
 
+```mermaid
+flowchart TD
+    IN[/"Analysis table, grouping column"/] --> LV["Next level of the column,<br/>Missing as its own level"]
+    LV --> DM["domain_mean: d = in the level and KA not NaN"]
+    DM --> R["rate = sum of w x KA / sum of w, in d"]
+    R --> Z["z = w x (KA - rate) / sum of w in d,<br/>z = 0 outside d"]
+    Z --> PT["Sum z in each PSU"]
+    PT --> ST{"Stratum has 2 or more PSUs?"}
+    ST -- "no" --> ZERO["No variance from this stratum"]
+    ST -- "yes" --> VAR["n/(n - 1) x sum of squared<br/>deviations of the PSU totals"]
+    VAR --> SE["SE = square root of the sum<br/>over the strata"]
+    ZERO --> SE
+    SE --> CI["95% CI = rate +/- 1.96 x SE,<br/>clipped to 0 and 1"]
+    CI --> SC["small_cell if n below 30,<br/>unweighted_rate for comparison"]
+    SC --> OUT[/"One table row for each level"/]
+```
+
 | Input | Output |
 |---|---|
 | Analysis table, grouping column | Table: `n`, `weighted_n`, `rate`, `se`, `ci_low`, `ci_high`, `unweighted_rate`, `small_cell` |
@@ -364,6 +556,23 @@ flowchart TB
 
 **Purpose.** Answer one question with controls: do newer vehicles (10 model years or less at the crash) have different odds of KA than older vehicles?
 
+```mermaid
+flowchart TD
+    IN[/"Analysis table"/] --> RM["Remove rows with no vehicle_age,<br/>newer = vehicle_age at most 10"]
+    RM --> BOTH{"Both groups present?"}
+    BOTH -- "no" --> E[/"ValueError"/]
+    BOTH -- "yes" --> RATES["domain_mean: weighted KA rate<br/>of newer and of older"]
+    BOTH -- "yes" --> FIT["Weighted LogisticRegression:<br/>KA on newer and the controls"]
+    FIT --> BETA["beta = newer coefficient"]
+    BETA --> BS["Next bootstrap draw:<br/>PSUs of each stratum with replacement"]
+    BS --> ONE{"One KA class or<br/>one age group only?"}
+    ONE -- "yes" --> SKIP["Skip the draw"]
+    ONE -- "no" --> REFIT["Fit again, keep the coefficient"]
+    REFIT --> PCT["2.5 and 97.5 percentiles,<br/>then exp"]
+    PCT --> OUT[/"AgeEffect: rates, odds ratio = exp beta,<br/>CI, significant if 1 not in the CI"/]
+    RATES --> OUT
+```
+
 | Input | Output |
 |---|---|
 | Analysis table | `AgeEffect`: weighted KA rate of each group with SE, adjusted odds ratio, bootstrap CI |
@@ -386,7 +595,7 @@ flowchart TB
 
 **Rules**
 
-- The default number of bootstrap draws is 50 (`--bootstrap`). A draw with only one KA class is skipped.
+- The default number of bootstrap draws is 50 (`--bootstrap`). A draw with only one KA class or only one age group is skipped.
 - If a control is not in the table, the model uses the other controls.
 
 ---
@@ -394,6 +603,26 @@ flowchart TB
 ## 9. Splits and model pipelines
 
 **Purpose.** Train models that a reader can compare and reproduce, with no leak between training and test rows.
+
+```mermaid
+flowchart TD
+    IN[/"Analysis table, target, model, seed"/] --> CK{"ordinal model with<br/>a target other than kabco?"}
+    CK -- "yes" --> E[/"ValueError"/]
+    CK -- "no" --> HO["grouped_holdout: one fold of 5,<br/>about 20% of the crashes"]
+    HO --> DJ["assert_disjoint_groups"]
+    DJ --> TRF["Training crashes"]
+    DJ --> TSF["Hold-out crashes"]
+    TRF --> CV["cross_validate: CRASHINSIGHT_N_SPLITS<br/>grouped folds, out-of-fold probabilities"]
+    CV --> CI["grouped_bootstrap_ci on the out-of-fold<br/>macro-F1 and KA PR-AUC"]
+    TRF --> FIT["build_pipeline, fit on all<br/>training crashes"]
+    TRF --> BASE["majority baseline,<br/>fit on the same rows"]
+    FIT --> TEST["classification_metrics<br/>on the hold-out crashes"]
+    TSF --> TEST
+    BASE --> TEST
+    CI --> SAVE
+    TEST --> SAVE["save"]
+    SAVE --> OUT[("model.joblib, metrics.json,<br/>model_card.md")]
+```
 
 | Input | Output |
 |---|---|
@@ -421,6 +650,22 @@ flowchart TB
 | binary | constant 0 imputer with a missing indicator |
 | nominal | constant `Missing` imputer, one-hot encoder (`min_frequency=10`, unknown categories go to "infrequent") |
 
+```mermaid
+flowchart LR
+    X[/"FeatureSpec columns"/] --> NUM["numeric: median imputer<br/>with missing indicator, StandardScaler"]
+    X --> BIN["binary: constant 0 imputer<br/>with missing indicator"]
+    X --> NOM["nominal: constant Missing imputer,<br/>OneHotEncoder min_frequency 10"]
+    NUM --> CT["ColumnTransformer prep"]
+    BIN --> CT
+    NOM --> CT
+    CT --> M{"build_estimator"}
+    M --> MJ["majority:<br/>DummyClassifier"]
+    M --> LR["logreg:<br/>LogisticRegression, balanced"]
+    M --> RF["forest: RandomForest,<br/>200 trees, balanced_subsample"]
+    M --> HG["boosting: HistGradientBoosting,<br/>150 iterations, balanced"]
+    M --> OR["ordinal: OrdinalClassifier,<br/>one model for each P of y above k"]
+```
+
 **Rules**
 
 - The `ordinal` model needs the `kabco` target. The other models accept `ka` and `kabco`.
@@ -432,6 +677,24 @@ flowchart TB
 ## 10. Evaluation and explanations
 
 **Purpose.** Measure each model on the rare KA class and show which features carry the signal.
+
+```mermaid
+flowchart TD
+    IN[/"True labels, probabilities,<br/>class labels, CASENUM"/] --> KS["ka_score: sum the K and A columns,<br/>or column 1, found by label"]
+    IN --> PR["Predicted class: argmax"]
+    PR --> CM["accuracy, balanced_accuracy,<br/>macro_f1, recall_by_class"]
+    KS --> BOTH{"Both KA values<br/>in the truth?"}
+    BOTH -- "yes" --> AUC["ka_pr_auc, ka_roc_auc,<br/>ka_prevalence"]
+    KS --> BR["ka_brier, ka_ece with 10 bins"]
+    CM --> MD[/"Metrics dictionary"/]
+    AUC --> MD
+    BR --> MD
+    IN --> GB["grouped_bootstrap_ci:<br/>draw whole crashes"]
+    GB --> CIS[/"Percentile CIs"/]
+    FIT[/"Fitted pipeline, test rows"/] --> PT["permutation_table: shuffle one raw<br/>feature, drop in KA PR-AUC"]
+    PT --> IMP[/"Importance table"/]
+    FIT -. "extra explain" .-> SH["shap_values"]
+```
 
 | Input | Output |
 |---|---|
@@ -462,6 +725,23 @@ flowchart TB
 ## 11. The decision rules
 
 **Target rules**
+
+```mermaid
+flowchart LR
+    C[/"MAX_VSEV code"/] --> Q{"Code"}
+    Q -- "0" --> O["O"]
+    Q -- "1" --> CC["C"]
+    Q -- "2" --> B["B"]
+    Q -- "3" --> A["A"]
+    Q -- "4" --> K["K"]
+    Q -- "5 or 9" --> UNK["Removed,<br/>counted as unknown"]
+    Q -- "6 or 8" --> NA["Removed,<br/>counted as not applicable"]
+    O --> KA0["ka = 0"]
+    CC --> KA0
+    B --> KA0
+    A --> KA1["ka = 1"]
+    K --> KA1
+```
 
 | `MAX_VSEV` | Label | KABCO | KA | In the table? |
 |---|---|---|---|---|
@@ -537,6 +817,15 @@ pip install -e ".[dev]"         # add ,explain for SHAP
 
 Offline demo (synthetic data, no download, about one minute):
 
+```mermaid
+flowchart LR
+    S["synthetic.write<br/>3,000 crashes, seed 0,<br/>temporary folder"] --> V["cmd_validate"]
+    V --> A["cmd_age<br/>30 bootstrap draws"]
+    A --> T["train majority, logreg, boosting<br/>target ka, 200 metric draws"]
+    T --> R["cmd_report"]
+    R --> O[/"outputs/demo_report.md"/]
+```
+
 ```bash
 crashinsight demo
 ```
@@ -577,13 +866,13 @@ crashinsight evaluate --data data/other_year --model outputs/boosting_ka/model.j
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `CRASHINSIGHT_DATA_DIR` | `config.Settings` | Default data folder (default `data`) |
+| `CRASHINSIGHT_DATA_DIR` | `config.Settings` | Data folder in `Settings.data_dir` (default `data`). No command reads it: each command needs `--data` |
 | `CRASHINSIGHT_OUTPUT_DIR` | `train`, `report`, `demo` | Output folder (default `outputs`) |
 | `CRASHINSIGHT_SEED` | All random steps | Seed for splits, models and bootstraps (default 42) |
 | `CRASHINSIGHT_CRASH_YEAR` | `dataset.build_dataset` | Year of the data, for `vehicle_age` (default 2015) |
 | `CRASHINSIGHT_N_SPLITS` | `train.cross_validate` | Number of grouped CV folds (default 5, minimum 2) |
 
-crashinsight needs no credentials. `.env.example` gives the variable names. Git ignores `.env`.
+crashinsight needs no credentials. `.env.example` gives the variable names. Git ignores `.env`. crashinsight does not load `.env` itself. Set the variables in the shell before you run a command.
 
 ---
 
